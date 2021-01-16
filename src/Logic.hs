@@ -104,12 +104,12 @@ sorted es = case es of
               return (v : vs, v `Imp` (e `And` o) : (e `And` o) `Imp` v : es)
 
 kEQ :: (Encode a) => [Exp a] -> Int -> State Int (Exp a)
-kEQ es k = do
-    (vs, es) <- sorted es
-    let e = if k < length es 
-            then (vs !! (k - 1)) `And` (Not $ vs !! k)
-            else last vs
-    return . foldl1 And $ e : es
+kEQ es k | k == 0         = return $ foldl1 And (Not <$> es)
+         | k == length es = return $ foldl1 And es
+         | otherwise      = do
+            (vs, es') <- sorted es
+            let e = (vs !! (k - 1)) `And` Not (vs !! k)
+            return . foldl1 And $ e : es'
 
 kNEQ :: (Encode a) => [Exp a] -> Int -> State Int (Exp a)
 kNEQ es k = do

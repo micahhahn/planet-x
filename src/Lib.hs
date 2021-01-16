@@ -65,6 +65,39 @@ clause' = sectorUniqueE `andM` astroidE `andM` dwarfPlanetE `andM` cometE `andM`
 
 clause = sectorUniqueE2 `andM` astroidE2 `andM` dwarfPlanetE2 `andM` cometE2 `andM` planetXE2 `andM` gasCloudE2
 
+game1 = clause `andM` 
+        survey Astroid (1, 9) 1 `andM`
+        survey DwarfPlanet (5, 11) 2 `andM`
+        survey Astroid (5, 10) 2 `andM`
+        survey Comet (11, 17) 0 `andM`
+        survey Astroid (14, 17) 1 `andM`
+        survey Astroid (17, 5) 2  `andM`
+        survey DwarfPlanet (17, 5) 3
+
+xNotAdjTo :: Object -> Exp VarX
+xNotAdjTo o = foldl1 And $ (\i -> Var (VarX PlanetX i) `Imp` Not (Var (VarX o (prev i)) `Or` Var (VarX o (next i)))) <$> [1..sectorCount]
+
+game2 = foldl1 andM [ clause
+                    , survey DwarfPlanet (3, 9) 3
+                    , survey Astroid (4, 10) 2
+                    , survey DwarfPlanet (7, 13) 0
+                    , survey Astroid (9, 15) 2
+                    , survey Comet (11, 17) 0
+                    , survey Astroid (11, 17) 1
+                    , survey Comet (13, 3) 1
+                    , survey EmptySpace (3, 4) 0
+                    , return (xNotAdjTo EmptySpace)
+                    , return (xNotAdjTo GasCloud)
+                    ]
+
+writeSatFile :: forall a. (Encode a) => State Int (Exp a) -> String -> IO ()
+writeSatFile s f = do
+    let varRank = rank (Proxy :: Proxy a)
+    let (e, i) = runState s (varRank + 1)
+    let iss = encodeExp e
+    let x = intercalate "\n" $ (\is -> intercalate " " $ fmap show is) <$> iss
+    writeFile f x
+
 showClause :: forall a. (Encode a) => State Int (Exp a) -> Exp a
 showClause c = evalState c (rank (Proxy :: Proxy a) + 1)
 

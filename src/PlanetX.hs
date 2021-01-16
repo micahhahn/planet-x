@@ -124,6 +124,20 @@ gasCloudE2 = do
     exactlyTwo <- kEQ (Var . VarX GasCloud <$> [1..sectorCount]) 2
     return $ emptyAjacent `And` exactlyTwo
 
+takeUntil :: (a -> Bool) -> [a] -> [a]
+takeUntil _ [] = []
+takeUntil p (a:as) = a : (if p a then [] else takeUntil p as) 
+
+survey :: Object -> (Int, Int) -> Int -> State Int (Exp VarX)
+survey o (l, r) = kEQ sectors
+    where sectors = case o of 
+                    EmptySpace -> (Var . VarX o <$> sectors') ++ (Var . VarX PlanetX <$> sectors')
+                    _ -> Var . VarX o <$> sectors'
+          sectors' = takeUntil (== r) $ (\i -> (l + i - 1) `mod` sectorCount + 1) <$> [0..]
+
+s = sorted (Var . VarX Astroid <$> sectors')
+    where sectors' = takeUntil (== 3) $ (\i -> (17 + i - 1) `mod` sectorCount + 1) <$> [0..]
+
 next :: Int -> Int
 next i = i `mod` sectorCount + 1
 
