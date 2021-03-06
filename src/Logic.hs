@@ -33,10 +33,9 @@ mkBinaryAuxVars i = mapM (const freshVar) [1..bitCount]
 binaryAMO :: (Encode a) => [Exp a] -> State Int (Exp a)
 binaryAMO exps = do
     binaryAuxVars <- mkBinaryAuxVars (length exps)
-    return . foldl1 And $ (\(e, ei) -> foldl1 And $ (\(b, bi) -> mkImp e ei b bi) <$> (zip binaryAuxVars [0..])) <$> (zip exps [0..])
+    let is = [0..] :: [Int]
 
-    where mkImp :: Exp a -> Int -> Exp a -> Int -> Exp a
-          mkImp e ei b bi = if (shift 1 bi) .&. ei == shift 1 bi then e `Imp` b else e `Imp` (Not b)
+    return $ allOf [ e `Imp` allOf [ if (shift 1 bi .&. ei) == shift 1 bi then b else Not b | (b, bi) <- zip binaryAuxVars is ] | (e, ei) <- zip exps is ]
 
 -- Guarantees that at least one of the input expressions is true
 binaryALO :: (Encode a) => [Exp a] -> State Int (Exp a)
@@ -88,7 +87,7 @@ sorted es = case es of
           merge (l:[]) (r:[]) = do
               x0 <- freshVar
               x1 <- freshVar
-              return ([x0, x1], [(l `Or` r) `Imp` x0, x0 `Imp` (l `Or` r), (l `And` r) `Imp` x1, x1 `Imp` (l `And` r)])
+              return ([x0, x1], [x0 `Equiv` (l `Or` r), x1 `Equiv` (l `And` r)])
           merge ls rs = do
               let (le, lo) = paritySplit ls
               let (re, ro) = paritySplit rs
@@ -103,11 +102,11 @@ sorted es = case es of
           mergeGo True (e:es) (o:os) = do
               v <- freshVar
               (vs, es) <- mergeGo False (e:es) (o:os)
-              return (v : vs, v `Imp` (e `Or` o) : (e `Or` o) `Imp` v : es)
+              return (v : vs, v `Equiv` (e `Or` o) : es)
           mergeGo False (e:es) (o:os) = do
               v <- freshVar
               (vs, es) <- mergeGo True es os
-              return (v : vs, v `Imp` (e `And` o) : (e `And` o) `Imp` v : es)
+              return (v : vs, v `Equiv` (e `And` o) : es)
 
 kEQ :: (Encode a) => [Exp a] -> Int -> State Int (Exp a)
 kEQ es k | k == 0         = return $ foldl1 And (Not <$> es)
@@ -136,28 +135,3 @@ kGT = undefined
 
 kGTE :: (Encode a) => [Exp a] -> Int -> State Int (Exp a)
 kGTE = undefined
-
-expSize :: forall a. (Encode a) => State Int (Exp a) -> ExpSize
-expSize es = ExpSize (i - rank (Proxy :: Proxy a) - 1) (goC e') (goO e')
-    where (e, i) = runState es (rank (Proxy :: Proxy a) + 1)
-          e' = normalize e
-
-          goO (Not e) = goO e + 1
-          goO (l `And` r) = goO l + goO r + 1
-          goO (l `Or` r) = goO l + goO r + 1
-          goO _ = 0 
-
-          goC (l `And` r) = goC l + goC r + 1
-          goC _ = 0
-
-
-
-{-
-greaterThanEqual :: Object -> Int -> Exp
-greaterThanEqual o n = foldl1 And $ (\ss -> foldl1 Or $ (\s -> Var $ SatVar o s True) <$> ss) <$> sectors
-    where sectors = choose [1..sectorCount] (sectorCount - n)
-
-lessThanEqual :: Object -> Int -> Exp
-lessThanEqual o n = foldl1 And $ (\ss -> foldl1 Or $ (\s -> Not . Var $ SatVar o s True) <$> ss) <$> sectors
-    where sectors = choose [1..sectorCount] n
--}
