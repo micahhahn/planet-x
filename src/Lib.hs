@@ -62,8 +62,7 @@ vars = Var . VarTest <$> [1..testVars]
 andM = liftM2 And
 
 clause' = sectorUniqueE `andM` astroidE `andM` dwarfPlanetE `andM` cometE `andM` planetXE `andM` gasCloudE
-
-clause = sectorUniqueE2 `andM` astroidE2 `andM` dwarfPlanetE2 `andM` cometE2 `andM` planetXE2 `andM` gasCloudE2
+clause = clause'
 
 game1 = clause `andM` 
         survey Astroid (1, 9) 1 `andM`
@@ -111,3 +110,49 @@ someFunc :: IO ()
 someFunc = do
     asg <- solveAll clause
     print (length asg)
+
+data TseytinState a = TseytinState [Exp a] Int
+
+type TExp a = State (TseytinState a) (Exp a)
+
+-- Takes an expression and binds it to a fresh unique variable
+bindVar :: (Encode a) => Exp a -> TExp a
+bindVar e = do
+    (TseytinState es i) <- get
+    let var = Var . decode $ i
+    let binding = var `Imp` e
+    put $ TseytinState (binding : es) (i+1)
+    return var
+
+toNNF :: Exp a -> Exp a
+toNNF e@(Var _) = e
+toNNF (Not (Not x)) = x
+toNNF e@(Not (Var _)) = e
+toNNF (Not (And l r)) = toNNF (Not l) `Or` toNNF (Not r)
+toNNF (Not (Or l r)) = toNNF (Not l) `And` toNNF (Not r)
+toNNF (And l r) = toNNF l `And` toNNF r
+toNNF (Or l r) = toNNF l `Or` toNNF r
+toNNF (Imp p q) = toNNF (Not p) `Or` toNNF q
+toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
+
+simplify :: (Encode a) => Exp a -> TExp a
+simplify = goClauses . toNNF
+    where goClauses :: (Encode a) => Exp a -> TExp a
+          goClauses e@(Var _) = return e
+          goClauses e@(Not _) = return e
+          goClauses (And l r) = liftM2 And (goClauses l) (goClauses r)
+          goClauses e@(Or _ _) = goClause e
+
+          goClause :: (Encode a) => Exp a -> TExp a
+          goClause e@(Var _) = return e
+          goClause e@(Not _) = return e
+          goClause (Or l r) = liftM2 Or (goClause l) (goClause r)
+          -- goClause (And l r) = do
+          --    l' <- goClause l
+          --    r' <- goClause r
+          --    bindVar (l' `And` r')
+          goClause (And l r) = bindVar (l `And` r)
+
+showC :: forall a. (Encode a) => TExp a -> Exp a
+showC c = allOf (e : es)
+    where (e, TseytinState es _) = runState c (TseytinState [] (rank (Proxy :: Proxy a) + 1))
