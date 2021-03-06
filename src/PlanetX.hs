@@ -59,19 +59,26 @@ astroidE2 = do
     exactly4 <- kEQ astroids 4
     let astroidAdj = foldl1 And $ (\i -> (Var $ VarX Astroid i) `Imp` ((Var . VarX Astroid . prev $ i) `Or` (Var . VarX Astroid . next $ i))) <$> [1..sectorCount]
     return $ exactly4 `And` astroidAdj
+dwarfPlanetE :: State Int (Exp VarX)
+dwarfPlanetE = do
+    let dwarfPlanets = fmap mkDwarf [1..sectorCount]
+    exactly4 <- kEQ dwarfPlanets 4
 
-dwarfPlanetE = binaryEO exps
-    where dwarfPlanets = VarX DwarfPlanet <$> [1..sectorCount]
-          combos = choose dwarfPlanets 4
-          refine = filter (\ss -> all (\(l:r:[]) -> distance l r < 6) (choose ss 2)) combos
-          exps = flip excludeOtherSectors DwarfPlanet <$> refine
+    -- e.g. (D1 => !D7 & !D8 & !D9 & !D10 & !D11 & !D12 & !D13)
+    let bandOf6 = allOf [p `Imp` allOf [Not q | q <- dwarfPlanets, distance' p q > 5] | p <- dwarfPlanets]
 
-dwarfPlanetE2 :: State Int (Exp VarX)
-dwarfPlanetE2 = do
-    let dwarfPlanets = VarX DwarfPlanet <$> [1..sectorCount]
-    exactly4 <- kEQ (Var <$> dwarfPlanets) 4
-    let bandOf6 = foldl1 And $ (\d1 -> Imp (Var d1) $ foldl1 And . concat $ (\d2 -> if distance d1 d2 > 5 then [Not $ Var d2] else []) <$> dwarfPlanets) <$> dwarfPlanets
-    return $ exactly4 `And` bandOf6
+    -- Enforce exactness of band of 6 boundary condition by verifing that there exists a pair of dwarf planets 6 sectors apart
+    -- e.g. (D1 & D6) | (D2 & D7) | ...
+    -- We need to use auxiliary variables to represent this efficiently in cnf
+    -- e.g. (v1 <=> D1 & D6) | (v2 <=> D2 & D7) | ... | (v1 | v2 | ...)
+    boundaryVars <- mapM (\i -> freshVar >>= (\v -> return (v, v `Equiv` mkBoundary i))) [1..sectorCount]
+    let boundaryBindings = allOf (fmap snd boundaryVars)
+    let boundary = anyOf (fmap fst boundaryVars)
+
+    return $ allOf [exactly4, bandOf6, boundaryBindings, boundary]
+
+    where mkDwarf = Var . VarX DwarfPlanet
+          mkBoundary i = mkDwarf i `And` mkDwarf ((i + 4) `mod` sectorCount + 1)
 
 excludeOtherSectors :: [VarX] -> Object -> Exp VarX
 excludeOtherSectors vs o = foldl1 And $ merge vs [1..sectorCount]
