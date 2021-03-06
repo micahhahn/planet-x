@@ -10,6 +10,12 @@ import Data.Proxy
 import Encode
 import Exp
 
+anyOf :: [Exp a] -> Exp a
+anyOf = foldl1 Or
+
+allOf :: [Exp a] -> Exp a
+allOf = foldl1 And
+
 mapTail :: (a -> [a] -> b) -> [a] -> [b]
 mapTail _ [] = []
 mapTail f (a:as) = f a as : mapTail f as
