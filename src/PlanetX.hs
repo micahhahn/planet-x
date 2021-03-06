@@ -46,19 +46,19 @@ sectorUniqueE = fmap (foldl1 And) . sequence $ (\s -> binaryEO $ (Var . flip Var
 sectorUniqueE2 :: State Int (Exp VarX)
 sectorUniqueE2 = fmap (foldl1 And) . sequence $ (\s -> kEQ ((Var . flip VarX s) <$> ([minBound..maxBound] :: [Object])) 1) <$> [1..sectorCount]
 
+-- There are 4 astroids, and they come in pairs.  i.e. each astroid must be next to at least one other astroid
 astroidE :: State Int (Exp VarX)
-astroidE = binaryEO exps
-    where astroids = VarX Astroid <$> [1..sectorCount]
-          combos = choose astroids 4
-          refine = filter (\ss -> all (\s -> any (adjacent s) ss) ss) combos
-          exps = flip excludeOtherSectors Astroid <$> refine
-
-astroidE2 :: State Int (Exp VarX)
-astroidE2 = do
+astroidE = do
     let astroids = Var . VarX Astroid <$> [1..sectorCount]
     exactly4 <- kEQ astroids 4
-    let astroidAdj = foldl1 And $ (\i -> (Var $ VarX Astroid i) `Imp` ((Var . VarX Astroid . prev $ i) `Or` (Var . VarX Astroid . next $ i))) <$> [1..sectorCount]
-    return $ exactly4 `And` astroidAdj
+
+    -- e.g. (D1 => D18 | D2) & (D2 => D1 | D3) & ...
+    let astroidAdj = allOf [ a `Imp` (prev' a `Or` next' a) | a <- astroids]
+
+    return $ allOf [exactly4, astroidAdj]
+
+-- There are 4 dwarf planets and they must be in a band of exactly 6, this leads to 6 possible configurations:
+-- DDDxxD | DDxDxD | DxDDxD | DDxxDD | DxDxDD | DxxDDD
 dwarfPlanetE :: State Int (Exp VarX)
 dwarfPlanetE = do
     let dwarfPlanets = fmap mkDwarf [1..sectorCount]
@@ -99,9 +99,11 @@ cometE = do
 
 cometE2 :: State Int (Exp VarX)
 cometE2 = do
-    let nots = foldl1 And $ Not . Var . VarX Comet <$> [1, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18]
-    pairs <- kEQ (Var . VarX Comet <$> [2, 3, 5, 7, 11, 13, 17]) 2
-    return $ nots `And` pairs
+    let nots = allOf $ mkComet <$> [1, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18]
+    pairs <- kEQ (mkComet <$> [2, 3, 5, 7, 11, 13, 17]) 2
+    return $ allOf [nots, pairs]
+
+    where mkComet = Var . VarX Comet
 
 planetXE :: State Int (Exp VarX)
 planetXE = do
@@ -148,13 +150,22 @@ s = sorted (Var . VarX Astroid <$> sectors')
 next :: Int -> Int
 next i = i `mod` sectorCount + 1
 
+next' :: Exp VarX -> Exp VarX
+next' (Var (VarX o i)) = Var . VarX o $ i `mod` sectorCount + 1
+
 prev :: Int -> Int
 prev i = (i - 2) `mod` sectorCount + 1
+
+prev' :: Exp VarX -> Exp VarX
+prev' (Var (VarX o i)) = Var . VarX o $ (i - 2) `mod` sectorCount + 1
 
 distance :: VarX -> VarX -> Int
 distance (VarX _ s1) (VarX _ s2) = let min' = min s1 s2
                                        max' = max s1 s2
                                     in min (max' - min') (min' + sectorCount - max')
+
+distance' :: Exp VarX -> Exp VarX -> Int
+distance' (Var l) (Var r) = distance l r
 
 adjacent :: VarX -> VarX -> Bool
 adjacent s1 s2 = distance s1 s2 == 1
