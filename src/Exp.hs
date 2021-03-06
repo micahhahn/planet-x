@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Exp where
@@ -10,37 +12,41 @@ data Exp a = Var a
            | And (Exp a) (Exp a)
            | Or (Exp a) (Exp a)
            | Imp (Exp a) (Exp a) 
+           | Equiv (Exp a) (Exp a)
+           deriving (Functor)
 
 deriving instance (Eq a) => Eq (Exp a)
 
 instance (Show a) => Show (Exp a) where
-    show e = case e of
+    show = \case
         Var x -> show x
 
         Not v@(Var _) -> "!"  ++ show v
         Not v@(Not _) -> "!"  ++ show v
         Not x         -> "!" ++ wrap x
 
-        Imp p q -> let f = \p -> case p of
-                                     i@(Imp _ _) -> wrap i
-                                     i@(And _ _) -> wrap i
-                                     i@(Or _ _) -> wrap i
-                                     x -> show x
-                    in f p ++ " => " ++ f q
-    
-        And l r -> let f = \x -> case x of
-                                     o@(Or _ _) -> wrap o
-                                     i@(Imp _ _) -> wrap i
-                                     x -> show x
+        Imp p q -> wrapImpEquiv p ++ " => " ++ wrapImpEquiv q
+        Equiv p q -> wrapImpEquiv p ++ " <=> " ++ wrapImpEquiv q
+
+        And l r -> let f = \case
+                                o@(Or _ _) -> wrap o
+                                i@(Imp _ _) -> wrap i
+                                i@(Equiv _ _) -> wrap i
+                                x -> show x
                     in f l ++ " & " ++ f r
         
-        Or l r ->  let f = \x -> case x of
-                                     a@(And _ _) -> wrap a
-                                     i@(Imp _ _) -> wrap i
-                                     x -> show x
+        Or l r ->  let f = \case
+                               a@(And _ _) -> wrap a
+                               i@(Imp _ _) -> wrap i
+                               i@(Equiv _ _) -> wrap i
+                               x -> show x
                     in f l ++ " | " ++ f r
 
         where wrap = ("(" ++) . (++ ")") . show
+              wrapImpEquiv = \case
+                                 i@(Imp _ _) -> wrap i
+                                 i@(Equiv _ _) -> wrap i
+                                 x -> show x
 
 -- Converts an expression to CNF form
 normalize :: Exp a -> Exp a
@@ -55,6 +61,8 @@ normalize = toCNF . toNNF
           toNNF (And l r) = (toNNF l) `And` (toNNF r)
           toNNF (Or l r) = (toNNF l) `Or` (toNNF r)
           toNNF (Imp p q) = (toNNF $ Not p) `Or` (toNNF q)
+          toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
+
 
           toCNF v@(Var _) = v
           toCNF (Not v@(Var _)) = Not v
@@ -66,3 +74,4 @@ normalize = toCNF . toNNF
                                         And rl rr -> (toCNF (x `Or` rl)) `And` (toCNF (x `Or` rr))
                                         y -> x `Or` y
           toCNF (Imp _ _) = error "Expression not in NNF"
+          tpCNF (Equiv _ _) = error "Expression not in NNF"
