@@ -18,6 +18,9 @@ import Exp
 import Logic
 import PlanetX
 
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
+
 {- solve :: forall a. (Encode a) => State Int (Exp a) -> IO (Exp a)
 solve s = do
     let (e, i) = runState s (rank (Proxy :: Proxy a))
@@ -111,42 +114,47 @@ someFunc = do
     asg <- solveAll clause
     print (length asg)
 
-data TseytinState a = TseytinState [Exp a] Int
+data TseytinState a = TseytinState (Map (Exp a) (Exp a)) Int
 
 type TExp a = State (TseytinState a) (Exp a)
 
 -- Takes an expression and binds it to a fresh unique variable
-bindVar :: (Encode a) => Exp a -> TExp a
+bindVar :: (Encode a, Ord a) => Exp a -> TExp a
 bindVar e = do
-    (TseytinState es i) <- get
-    let var = Var . decode $ i
-    let binding = var `Imp` e
-    put $ TseytinState (binding : es) (i+1)
-    return var
+    (TseytinState m i) <- get
+    case Map.lookup e m of
+        Just e' -> return e'
+        Nothing -> do
+                   let var = Var . decode $ i
+                   let m' = Map.insert e var m
+                   put $ TseytinState m' (i+1)
+                   return var
 
-toNNF :: Exp a -> Exp a
-toNNF e@(Var _) = e
-toNNF (Not (Not x)) = x
-toNNF e@(Not (Var _)) = e
-toNNF (Not (And l r)) = toNNF (Not l) `Or` toNNF (Not r)
-toNNF (Not (Or l r)) = toNNF (Not l) `And` toNNF (Not r)
-toNNF (And l r) = toNNF l `And` toNNF r
-toNNF (Or l r) = toNNF l `Or` toNNF r
-toNNF (Imp p q) = toNNF (Not p) `Or` toNNF q
-toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
-
-simplify :: (Encode a) => Exp a -> TExp a
+simplify :: (Encode a, Ord a) => Exp a -> TExp a
 simplify = goClauses . toNNF
-    where goClauses :: (Encode a) => Exp a -> TExp a
+    where toNNF :: Exp a -> Exp a
+          toNNF e@(Var _) = e
+          toNNF (Not (Not x)) = x
+          toNNF e@(Not (Var _)) = e
+          toNNF (Not (And l r)) = toNNF (Not l) `Or` toNNF (Not r)
+          toNNF (Not (Or l r)) = toNNF (Not l) `And` toNNF (Not r)
+          toNNF (And l r) = toNNF l `And` toNNF r
+          toNNF (Or l r) = toNNF l `Or` toNNF r
+          toNNF (Imp p q) = toNNF (Not p) `Or` toNNF q
+          toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
+        
+          goClauses :: (Encode a, Ord a) => Exp a -> TExp a
           goClauses (And l r) = liftM2 And (goClauses l) (goClauses r)
           goClauses e@(Or _ _) = goClause e
           goClauses e = return e
 
-          goClause :: (Encode a) => Exp a -> TExp a
+          goClause :: (Encode a, Ord a) => Exp a -> TExp a
           goClause (Or l r) = liftM2 Or (goClause l) (goClause r)
           goClause e@(And _ _) = goClauses e >>= bindVar
           goClause e = return e
 
+xs = [ Var (VarX PlanetX i) | i <- [1..18]]
+
 showC :: forall a. (Encode a) => TExp a -> Exp a
-showC c = allOf (e : es)
-    where (e, TseytinState es _) = runState c (TseytinState [] (rank (Proxy :: Proxy a) + 1))
+showC c = allOf (e : [v `Imp` e' | (e', v) <- Map.assocs es ])
+    where (e, TseytinState es _) = runState c (TseytinState Map.empty (rank (Proxy :: Proxy a) + 1))

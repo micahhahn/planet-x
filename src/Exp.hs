@@ -16,6 +16,7 @@ data Exp a = Var a
            deriving (Functor)
 
 deriving instance (Eq a) => Eq (Exp a)
+deriving instance (Ord a) => Ord (Exp a)
 
 instance (Show a) => Show (Exp a) where
     show = \case

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2619123e9b301ec519a966e3795404db7e5943fe4acf3b407b9fc21f1b07aed7
+-- hash: cf2b76996e88fa56ef3583560238eec86775a79bab6f51d529211e2c07471f29
 
 name:           planet-x
 version:        0.1.0.0
@@ -38,6 +38,7 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , containers
     , mios
     , monad-loops
     , mtl
@@ -52,6 +53,7 @@ executable planet-x-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers
     , mios
     , monad-loops
     , mtl
@@ -68,6 +70,7 @@ test-suite planet-x-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers
     , mios
     , monad-loops
     , mtl

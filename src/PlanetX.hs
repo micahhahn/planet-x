@@ -16,6 +16,7 @@ data Object = Astroid
 
 data VarX = VarX Object Int
           | Aux Int
+          deriving (Eq, Ord)
 
 instance Show VarX where
     show (VarX o i) = (case o of

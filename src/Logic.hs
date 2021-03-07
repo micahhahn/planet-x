@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Logic where
@@ -69,6 +70,36 @@ data ExpSize = ExpSize
 paritySplit :: [a] -> ([a], [a])
 paritySplit es = (snd <$> ls, snd <$> rs)
     where (ls, rs) = partition ((== 0) . (`mod` 2) . fst) (zip [0..] es)
+
+sorted' :: [Exp a] -> [Exp a]
+sorted' = \case
+    [] -> []
+    [e] -> [e]
+    es -> let half = length es `div` 2
+              left = sorted' $ take half es
+              right = sorted' $ drop half es
+           in merge left right
+
+    where merge :: [Exp a] -> [Exp a] -> [Exp a]
+          merge [] rs = rs
+          merge ls [] = ls
+          merge [l] [r] = [l `Or` r, l `And` r]
+          merge ls rs = let (le, lo) = paritySplit ls
+                            (re, ro) = paritySplit rs
+                            evens = merge le re
+                            odds = merge lo ro
+                         in head evens : mergeGo True (tail evens) odds
+
+          mergeGo :: Bool -> [Exp a] -> [Exp a] -> [Exp a]
+          mergeGo _ [] [] = []
+          mergeGo _ [even] [] = [even]
+          mergeGo _ [] [odd] = [odd]
+          mergeGo True (e:es) (o:os) = (e `Or` o) : mergeGo False (e:es) (o:os)
+          mergeGo False (e:es) (o:os) = (e `And` o) : mergeGo True es os
+
+          paritySplit :: [a] -> ([a], [a])
+          paritySplit es = let (ls, rs) = partition ((== 0) . (`mod` 2) . fst) (zip [0..] es)
+                            in (snd <$> ls, snd <$> rs)
 
 sorted :: forall a. (Encode a) => [Exp a] -> State Int ([Exp a], [Exp a])
 sorted es = case es of 

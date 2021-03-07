@@ -3,7 +3,21 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    cabal-file:
+      size: 5055
+      sha256: 7eed53cafa8c99efe3f06012a79a0b8d8989a194f7a4f0ff0240a19a5dd6c339
+    name: mios
+    version: 1.6.2
+    git: https://github.com/shnarazk/mios.git
+    pantry-tree:
+      size: 5006
+      sha256: af714682f08d389c401a82968a5238f8b1c539fbcc7d6dfc7d994b5e35e830df
+    commit: d032d761d73224f981a07ec2ea90936db6f495e8
+  original:
+    git: https://github.com/shnarazk/mios.git
+    commit: d032d761d73224f981a07ec2ea90936db6f495e8
 snapshots:
 - completed:
     size: 532172
