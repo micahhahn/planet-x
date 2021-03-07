@@ -138,20 +138,14 @@ toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
 simplify :: (Encode a) => Exp a -> TExp a
 simplify = goClauses . toNNF
     where goClauses :: (Encode a) => Exp a -> TExp a
-          goClauses e@(Var _) = return e
-          goClauses e@(Not _) = return e
           goClauses (And l r) = liftM2 And (goClauses l) (goClauses r)
           goClauses e@(Or _ _) = goClause e
+          goClauses e = return e
 
           goClause :: (Encode a) => Exp a -> TExp a
-          goClause e@(Var _) = return e
-          goClause e@(Not _) = return e
           goClause (Or l r) = liftM2 Or (goClause l) (goClause r)
-          -- goClause (And l r) = do
-          --    l' <- goClause l
-          --    r' <- goClause r
-          --    bindVar (l' `And` r')
-          goClause (And l r) = bindVar (l `And` r)
+          goClause e@(And _ _) = goClauses e >>= bindVar
+          goClause e = return e
 
 showC :: forall a. (Encode a) => TExp a -> Exp a
 showC c = allOf (e : es)
