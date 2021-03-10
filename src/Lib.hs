@@ -21,6 +21,8 @@ import PlanetX
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map)
 
+import Data.Bits (shift, (.&.))
+
 {- solve :: forall a. (Encode a) => State Int (Exp a) -> IO (Exp a)
 solve s = do
     let (e, i) = runState s (rank (Proxy :: Proxy a))
@@ -177,21 +179,56 @@ simplifyT (Xor l r) = do
     bindFullVar trueE falseE
 simplifyT x = return x
 
-type BoundState a = State ([Exp a], Int) a
+data BoundExpressions a = BoundExpressions [Exp a] Int
 
-countFull :: [Exp a] -> BoundState [Exp a]
+equivVar :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
+equivVar trueE falseE = do
+    (BoundExpressions es i) <- get
+    let var = Var . decode $ i
+    let trueI = var `Imp` trueE
+    let falseI = Not var `Imp` falseE
+    put $ BoundExpressions (trueI : falseI : es) (i+1)
+    return var
+
+bindAnd :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
+bindAnd l r = equivVar (l `And` r) (Not l `Or` Not r)
+
+bindXor :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
+bindXor l r = equivVar ((l `Or` r) `And` (Not l `Or` Not r)) ((l `Or` Not r) `And` (Not l `Or` r))
+
+-- 1 if at least two of three inputs is true
+bindCarry :: (Encode a) => Exp a -> Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
+bindCarry x1 x2 x3 = equivVar trueE falseE
+    where trueE = (x1 `Or` x2) `And` (x2 `Or` x3) `And` (x1 `Or` x3)
+          falseE = (Not x1 `Or` Not x2) `And` (Not x2 `Or` Not x3) `And` (Not x1 `Or` Not x3)
+
+countFull :: (Encode a) => [Exp a] -> State (BoundExpressions a) [Exp a]
 countFull es = goCount es
 
-    where adder :: [Exp a] -> [Exp a] -> BoundState [Exp a]
-          adder [] [r] = [r `And` Not r, r]
-          adder [l] [] = [l `And` Not l, l]
-          adder [l] [r] = [l `And` r, l `Xor` r]
-          adder (l:ls) (r:rs) = let (c:es) = adder ls rs
-                                    es' = (l `Xor` r `Xor` c) : es
-                                    c' = (l `Or` r) `And` (l `Or` c) `And` (r `Or` c)
-                                 in c' : es'
-        
-          goCount :: [Exp a] -> BoundState [Exp a]
+    where adder :: (Encode a) => [Exp a] -> [Exp a] -> State (BoundExpressions a) [Exp a]
+          adder [l] [] = return [l]
+          adder [] [r] = return [r]
+          adder [l] [r] = halfAdder l r
+          adder (l:ls) (r:rs) = do
+              as <- halfAdder l r
+              case as of
+                  [a, c] -> (a:) <$> fAdder ls rs c
+          
+          fAdder [] [] c = return [c]
+          fAdder [l] [] c = halfAdder l c
+          fAdder [] [r] c = halfAdder r c
+          fAdder (l:ls) (r:rs) c = do
+              as <- fullAdder l r c
+              case as of
+                [a, c'] -> (a:) <$> fAdder ls rs c
+
+          halfAdder :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) [Exp a]
+          halfAdder l r = liftM2 (\a c -> [a, c]) (bindXor l r) (bindAnd l r)
+
+          fullAdder :: (Encode a) => Exp a -> Exp a -> Exp a -> State (BoundExpressions a) [Exp a]
+          fullAdder l r c = liftM2 (\a c -> [a, c]) (bindXor l r >>= bindXor c) (bindCarry l r c)
+
+          goCount :: (Encode a) => [Exp a] -> State (BoundExpressions a) [Exp a]
           goCount [e] = return [e]
           goCount es = do
               let half = length es `div` 2
@@ -199,7 +236,16 @@ countFull es = goCount es
               rc <- goCount $ drop half es
               adder lc rc
 
-xs = [ Var (VarX PlanetX i) | i <- [1..4]]
+kEQ' :: (Encode a) => [Exp a] -> Int -> State (BoundExpressions a) (Exp a)
+kEQ' es n = do
+    bs <- countFull es
+    return $ allOf [ (if (shift n (-i) .&. 1) == 1 then b else Not b) | (b, i) <- zip bs [0..] ]
+
+xs = [ Var (VarX PlanetX i) | i <- [1..18]]
+
+showB :: forall a. (Encode a) => State (BoundExpressions a) (Exp a) -> Exp a
+showB c = allOf (e : es)
+    where (e, BoundExpressions es _) = runState c (BoundExpressions [] (rank (Proxy :: Proxy a) + 1))
 
 -- { X1, X2, X3, X4 }
 -- v1 => (X1 | X2) & (X3 | X4)
