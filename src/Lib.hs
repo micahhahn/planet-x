@@ -130,6 +130,15 @@ bindVar e = do
                    put $ TseytinState m' (i+1)
                    return var
 
+bindFullVar :: (Encode a, Ord a) => Exp a -> Exp a -> TExp a
+bindFullVar trueE falseE = do
+    (TseytinState m i) <- get
+    let var = Var . decode $ i
+    let m' = Map.insert trueE var m
+    let m'' = Map.insert falseE (Not var) m'
+    put $ TseytinState m'' (i+1)
+    return var
+
 simplify :: (Encode a, Ord a) => Exp a -> TExp a
 simplify = goClauses . toNNF
     where toNNF :: Exp a -> Exp a
@@ -138,8 +147,10 @@ simplify = goClauses . toNNF
           toNNF e@(Not (Var _)) = e
           toNNF (Not (And l r)) = toNNF (Not l) `Or` toNNF (Not r)
           toNNF (Not (Or l r)) = toNNF (Not l) `And` toNNF (Not r)
+          toNNF (Not x) = toNNF $ Not (toNNF x)
           toNNF (And l r) = toNNF l `And` toNNF r
           toNNF (Or l r) = toNNF l `Or` toNNF r
+          toNNF (Xor l r) = toNNF $ (l `Or` r) `And` (Not l `Or` Not r)
           toNNF (Imp p q) = toNNF (Not p) `Or` toNNF q
           toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
         
@@ -153,7 +164,70 @@ simplify = goClauses . toNNF
           goClause e@(And _ _) = goClauses e >>= bindVar
           goClause e = return e
 
-xs = [ Var (VarX PlanetX i) | i <- [1..18]]
+simplifyT :: (Encode a, Ord a) => Exp a -> TExp a
+simplifyT o@(Var _) = return o
+simplifyT o@(Not (Var _)) = return o
+simplifyT (Xor l r) = do
+    l' <- simplifyT l
+    r' <- simplifyT r
+    nl' <- simplifyT (Not l)
+    nr' <- simplifyT (Not r)
+    let trueE = (l' `Or` r') `And` (nl' `Or` nr')
+    let falseE = (l' `Or` nr') `And` (nl' `Or` r')
+    bindFullVar trueE falseE
+simplifyT x = return x
+
+type BoundState a = State ([Exp a], Int) a
+
+countFull :: [Exp a] -> BoundState [Exp a]
+countFull es = goCount es
+
+    where adder :: [Exp a] -> [Exp a] -> BoundState [Exp a]
+          adder [] [r] = [r `And` Not r, r]
+          adder [l] [] = [l `And` Not l, l]
+          adder [l] [r] = [l `And` r, l `Xor` r]
+          adder (l:ls) (r:rs) = let (c:es) = adder ls rs
+                                    es' = (l `Xor` r `Xor` c) : es
+                                    c' = (l `Or` r) `And` (l `Or` c) `And` (r `Or` c)
+                                 in c' : es'
+        
+          goCount :: [Exp a] -> BoundState [Exp a]
+          goCount [e] = return [e]
+          goCount es = do
+              let half = length es `div` 2
+              lc <- goCount $ take half es
+              rc <- goCount $ drop half es
+              adder lc rc
+
+xs = [ Var (VarX PlanetX i) | i <- [1..4]]
+
+-- { X1, X2, X3, X4 }
+-- v1 => (X1 | X2) & (X3 | X4)
+-- v2 => (X1 | X3) & (X2 | X4)
+-- v3 => (!X1 | !X2) & (!X3 | !X4)
+-- v4 => (!X1 | !X3) & (!X2 | !X4)
+--  0 : !X1 & !X2 & !X3 & !X4
+-- >0 : X1 | X2 | X3 | X4
+-- >1 : v1 | v2
+-- >2 : !(v3 | v4)
+--  4 :  X1 & X2 & X3 & X4
+-- <4 : !X1 | !X2 | !X3 | !X4
+-- <3 : v3 | v4
+-- <2 : !(v1 | v2)
+-- <1 : !X1 & !X2 & !X3 & !X4
+
+-- { X1, X2, X3, X4, X5 }
+-- x1 => (X1 | X2 | X3) & (X4 | X5)
+-- x2 => (X1 | X2 | X4) & (X3 | X5)
+
+-- { X1, X2, X3, X4, X5, X6, X7, X8 }
+-- v1 => (X1 | X2 | X3 | X4) & (X5 | X6 | X7 | X8)
+-- v2 => (X1 | X2 | X7 | X8) & (X3 | X4 | X5 | X6)
+-- v3 => (X1 | X3 | X5 | X7) & (X2 | X4 | X6 | X8)
+
+-- v1 => (X1 | X2 | X3) & (X4 | X5 | X6) & (X7 | X8)
+-- v2 => (X1 | X4 | X7) & (X2 | X5 | X8) & (X3 | X6)
+
 
 showC :: forall a. (Encode a) => TExp a -> Exp a
 showC c = allOf (e : [v `Imp` e' | (e', v) <- Map.assocs es ])

@@ -11,6 +11,7 @@ data Exp a = Var a
            | Not (Exp a)
            | And (Exp a) (Exp a)
            | Or (Exp a) (Exp a)
+           | Xor (Exp a) (Exp a)
            | Imp (Exp a) (Exp a) 
            | Equiv (Exp a) (Exp a)
            deriving (Functor)
@@ -31,17 +32,27 @@ instance (Show a) => Show (Exp a) where
 
         And l r -> let f = \case
                                 o@(Or _ _) -> wrap o
-                                i@(Imp _ _) -> wrap i
-                                i@(Equiv _ _) -> wrap i
+                                o@(Xor _ _) -> wrap o
+                                o@(Imp _ _) -> wrap o
+                                o@(Equiv _ _) -> wrap o
                                 x -> show x
                     in f l ++ " & " ++ f r
         
         Or l r ->  let f = \case
-                               a@(And _ _) -> wrap a
-                               i@(Imp _ _) -> wrap i
-                               i@(Equiv _ _) -> wrap i
+                               o@(And _ _) -> wrap o
+                               o@(Xor _ _) -> wrap o
+                               o@(Imp _ _) -> wrap o
+                               o@(Equiv _ _) -> wrap o
                                x -> show x
                     in f l ++ " | " ++ f r
+
+        Xor l r -> let f = \case
+                               o@(And _ _) -> wrap o
+                               o@(Or _ _) -> wrap o
+                               o@(Imp _ _) -> wrap o
+                               o@(Equiv _ _) -> wrap o
+                               x -> show x
+                    in f l ++ " ^ " ++ f r
 
         where wrap = ("(" ++) . (++ ")") . show
               wrapImpEquiv = \case
@@ -57,10 +68,12 @@ normalize = toCNF . toNNF
           toNNF v@(Var _) = v
           toNNF (Not (Not x)) = x
           toNNF (Not (Var s)) = Not (Var s)
-          toNNF (Not (And l r)) = (toNNF $ Not l) `Or` (toNNF $ Not r)
+          toNNF (Not (And l r)) = toNNF (Not l) `Or` toNNF (Not r)
           toNNF (Not (Or l r)) = (toNNF $ Not l) `And` (toNNF $ Not r)
+          toNNF (Not (Xor l r)) = toNNF $ Not (toNNF (Xor l r))
           toNNF (And l r) = (toNNF l) `And` (toNNF r)
           toNNF (Or l r) = (toNNF l) `Or` (toNNF r)
+          toNNF (Xor l r) = toNNF $ (l `Or` r) `And` (Not l `Or` Not r)
           toNNF (Imp p q) = (toNNF $ Not p) `Or` (toNNF q)
           toNNF (Equiv p q) = toNNF $ (p `Imp` q) `And` (q `Imp` p)
 

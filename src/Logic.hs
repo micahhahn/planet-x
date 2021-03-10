@@ -139,6 +139,25 @@ sorted es = case es of
               (vs, es) <- mergeGo True es os
               return (v : vs, v `Equiv` (e `And` o) : es)
 
+count :: [Exp a] -> [Exp a]
+count es = goCount es
+
+    where adder :: [Exp a] -> [Exp a] -> [Exp a]
+          adder [] [r] = [r `And` Not r, r]
+          adder [l] [] = [l `And` Not l, l]
+          adder [l] [r] = [l `And` r, l `Xor` r]
+          adder (l:ls) (r:rs) = let (c:es) = adder ls rs
+                                    es' = (l `Xor` r `Xor` c) : es
+                                    c' = (l `Or` r) `And` (l `Or` c) `And` (r `Or` c)
+                                 in c' : es'
+        
+          goCount :: [Exp a] -> [Exp a]
+          goCount [e] = [e]
+          goCount es = let half = length es `div` 2
+                           lc = goCount $ take half es
+                           rc = goCount $ drop half es
+                        in adder lc rc
+
 kEQ :: (Encode a) => [Exp a] -> Int -> State Int (Exp a)
 kEQ es k | k == 0         = return $ foldl1 And (Not <$> es)
          | k == length es = return $ foldl1 And es
