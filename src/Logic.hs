@@ -60,12 +60,6 @@ binaryEO exps = do
     alo <- binaryALO exps
     return $ amo `And` alo
 
-data ExpSize = ExpSize
-             { _auxVars :: Int
-             , _clauses :: Int
-             , _ops :: Int
-             } deriving (Show)
-
 -- Splits a list into even and odd elements
 paritySplit :: [a] -> ([a], [a])
 paritySplit es = (snd <$> ls, snd <$> rs)

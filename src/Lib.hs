@@ -9,8 +9,9 @@ module Lib
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy
 import Data.Coerce
-import Data.List (intercalate, sort, nub)
+import Data.List (intercalate, sort, nub, sortBy)
 import Data.Proxy
+import Data.Tuple (swap)
 import SAT.Mios
 
 import Encode
@@ -117,6 +118,7 @@ someFunc = do
     print (length asg)
 
 data TseytinState a = TseytinState (Map (Exp a) (Exp a)) Int
+    deriving Show
 
 type TExp a = State (TseytinState a) (Exp a)
 
@@ -193,8 +195,18 @@ equivVar trueE falseE = do
 bindAnd :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
 bindAnd l r = equivVar (l `And` r) (Not l `Or` Not r)
 
+bindOr :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
+bindOr l r = equivVar (l `Or` r) (Not l `And` Not r)
+
 bindXor :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
 bindXor l r = equivVar ((l `Or` r) `And` (Not l `Or` Not r)) ((l `Or` Not r) `And` (Not l `Or` r))
+
+bindVar' :: (Encode a) => Exp a -> State (BoundExpressions a) (Exp a)
+bindVar' e = do
+    (BoundExpressions es i) <- get
+    let var = Var . decode $ i
+    put $ BoundExpressions (var `Imp` e : es) (i+1)
+    return var
 
 -- 1 if at least two of three inputs is true
 bindCarry :: (Encode a) => Exp a -> Exp a -> Exp a -> State (BoundExpressions a) (Exp a)
@@ -236,16 +248,138 @@ countFull es = goCount es
               rc <- goCount $ drop half es
               adder lc rc
 
+log2 :: Int -> Int
+log2 i = floor $ logBase 2 (realToFrac i)
+
+countInc :: (Encode a) => [Exp a] -> State (BoundExpressions a) [Exp a]
+countInc es = goCount es [] 1
+
+    where incAdder _ _ 0 = return []
+          incAdder [] c _ = return [c]
+          incAdder (e:es) c n = if n == 1 
+                                then (:[]) <$> bindOr e c
+                                else do
+                                    as <- halfAdder e c
+                                    case as of
+                                        [a, c'] -> (a:) <$> incAdder es c' (n - 1)
+
+          halfAdder :: (Encode a) => Exp a -> Exp a -> State (BoundExpressions a) [Exp a]
+          halfAdder l r = liftM2 (\a c -> [a, c]) (bindXor l r) (bindAnd l r)
+
+          goCount :: (Encode a) => [Exp a] -> [Exp a] -> Int -> State (BoundExpressions a) [Exp a]
+          goCount [] as _ = return as
+          goCount (e:es) as n = incAdder as e maxDigits >>= \x -> goCount es x (n + 1)
+            where maxDigits = log2 n + 1
+
 kEQ' :: (Encode a) => [Exp a] -> Int -> State (BoundExpressions a) (Exp a)
 kEQ' es n = do
-    bs <- countFull es
+    bs <- countInc es
     return $ allOf [ (if (shift n (-i) .&. 1) == 1 then b else Not b) | (b, i) <- zip bs [0..] ]
 
+bindAndM l r = liftM2 And l r >>= bindVar
+bindOrM l r = liftM2 Or l r >>= bindVar
+
+kFunEQ :: (Encode a, Ord a) => [Exp a] -> Int -> TExp a
+kFunEQ = go
+    where go :: (Encode a, Ord a) => [Exp a] -> Int -> TExp a
+          go [e1] 0 = return (Not e1)
+          go [e1] 1 = return e1
+        
+          go [e1, e2] 0 = bindVar (Not e1 `And` Not e2)
+          go [e1, e2] 1 = bindVar (e1 `Xor` e2)
+          go [e1, e2] 2 = bindVar (e1 `And` e2)
+
+          go l@(e1:e2:es) n 
+            | n == 0 = bindAndM (bindVar (Not e1 `And` Not e2)) (go es 0)
+            | n == 1 = let none = bindAndM (bindVar (Not e1 `And` Not e2)) (go es 1)
+                           one = bindAndM (bindVar (e1 `Xor` e2)) (go es 0)
+                        in bindOrM none one
+            | n == length l - 1 = let one = bindAndM (bindVar (e1 `Xor` e2)) (go es (n-1))
+                                      two = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
+                                   in bindOrM one two
+            | n == length l = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
+            | otherwise = let none = bindAndM (bindVar (Not e1 `And` Not e2)) (go es n)
+                              one = bindAndM (bindVar (e1 `Xor` e2)) (go es (n-1))
+                              two = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
+                           in liftM2 Or (liftM2 Or none one) two >>= bindVar
+
+kFunEQ2 :: (Encode a, Ord a) => [Exp a] -> Int -> Exp a
+kFunEQ2 = go
+    where go :: (Encode a, Ord a) => [Exp a] -> Int -> Exp a
+          go [e1] 0 = Not e1
+          go [e1] 1 = e1
+        
+          go [e1, e2] 0 = Not e1 `And` Not e2
+          go [e1, e2] 1 = e1 `Xor` e2
+          go [e1, e2] 2 = e1 `And` e2
+
+          go l@(e1:e2:es) n 
+            | n == 0 = (Not e1 `And` Not e2) `And` (go es 0)
+            | n == 1 = let none = (Not e1 `And` Not e2) `And` (go es 1)
+                           one = (e1 `Xor` e2) `And` (go es 0)
+                        in none `Or` one
+            | n == length l - 1 = let one = (e1 `Xor` e2) `And` (go es (n-1))
+                                      two = (e1 `And` e2) `And` (go es (n-2))
+                                   in one `Or` two
+            | n == length l = (e1 `And` e2) `And` (go es (n-2))
+            | otherwise = let none = (Not e1 `And` Not e2) `And` (go es n)
+                              one = (e1 `Xor` e2) `And` (go es (n-1))
+                              two = (e1 `And` e2) `And` (go es (n-2))
+                           in none `Or` one `Or` two
+
+-- Evaluates an expression in a 3-way logic.  If the expression contains an unresolved variable (not in the map), the result is Nothing. 
+eval :: (Ord a) => Exp a -> Map (Exp a) Bool -> Maybe Bool
+eval e m = go e
+    where go v@(Var _) = Map.lookup v m
+          go (Not e) = not <$> go e
+          go (And l r) = case (go l, go r) of
+                            (Just False, _) -> Just False
+                            (_, Just False) -> Just False
+                            (l', r') -> liftM2 (&&) l' r'
+          go (Or l r) = case (go l, go r) of
+                            (Just True, _) -> Just True
+                            (_, Just True) -> Just True
+                            (l', r') -> liftM2 (||) l' r'
+          go (Xor l r) = liftM2 (/=) (go l) (go r)
+          go (Imp l r) = go (Not l `Or` r)
+          go (Equiv l r) = go ((l `Imp` r) `And` (r `Imp` l))
+
+-- Resolves all auxiliary variables
+evalT :: forall a. (Encode a, Ord a) => TExp a -> Map (Exp a) Bool -> Exp a
+evalT te varToVal = finalE
+    where (e, TseytinState es _) = runState te (TseytinState Map.empty (rank (Proxy :: Proxy a) + 1))
+          auxToDef = sortBy (\l r -> (encode . fst $ l) `compare` (encode . fst $ r)) [(x, e') | p@(Var x, e') <- fmap swap . Map.assocs $ es ]
+          (es', s') = runState (mapM f auxToDef) varToVal
+          finalE = foldl1 And (e : [ exp | (Just exp) <- es'])
+     
+          resolveValue :: Exp a -> Bool
+          resolveValue = undefined
+
+          f :: (a, Exp a) -> State (Map (Exp a) Bool) (Maybe (Exp a))
+          f (x, e') = state (\s -> case eval e' s of
+                                       Just False -> (Nothing, Map.insert (Var x) False s)
+                                       _ -> (Just $ Var x `Imp` e', s)
+                                       )
+ 
 xs = [ Var (VarX PlanetX i) | i <- [1..18]]
+
+sizes = [ expSizeB $ kEQ' [ Var (VarX PlanetX i) | i <- [1..n]] 1 | n <- [2..20] ]
 
 showB :: forall a. (Encode a) => State (BoundExpressions a) (Exp a) -> Exp a
 showB c = allOf (e : es)
     where (e, BoundExpressions es _) = runState c (BoundExpressions [] (rank (Proxy :: Proxy a) + 1))
+
+data ExpSize = ExpSize { _auxVars :: Int, _ops :: Int } deriving (Show)
+
+expSizeB :: forall a. (Encode a) => State (BoundExpressions a) (Exp a) -> ExpSize
+expSizeB s = ExpSize (i - rank (Proxy :: Proxy a) - 1) $ expSize e + sum (expSize <$> es)
+    where (e, BoundExpressions es i) = runState s (BoundExpressions [] (rank (Proxy :: Proxy a) + 1))
+          expSize :: Exp a -> Int
+          expSize (Var _) = 0
+          expSize (Not x) = expSize x
+          expSize (And l r) = expSize l + 1 + expSize r
+          expSize (Or l r) = expSize l + 1 + expSize r
+          expSize (Imp p q) = expSize p + 1 + expSize q
 
 -- { X1, X2, X3, X4 }
 -- v1 => (X1 | X2) & (X3 | X4)
