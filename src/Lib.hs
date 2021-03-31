@@ -2,13 +2,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 
-module Lib
-    ( someFunc
-    ) where
+module Lib where
 
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy
 import Data.Coerce
+import Data.Foldable (foldl')
 import Data.List (intercalate, sort, nub, sortBy)
 import Data.Proxy
 import Data.Tuple (swap)
@@ -290,76 +289,33 @@ kFunEQ = go
           go [e1, e2] 2 = bindVar (e1 `And` e2)
 
           go l@(e1:e2:es) n 
-            | n == 0 = bindAndM (bindVar (Not e1 `And` Not e2)) (go es 0)
-            | n == 1 = let none = bindAndM (bindVar (Not e1 `And` Not e2)) (go es 1)
-                           one = bindAndM (bindVar (e1 `Xor` e2)) (go es 0)
-                        in bindOrM none one
-            | n == length l - 1 = let one = bindAndM (bindVar (e1 `Xor` e2)) (go es (n-1))
-                                      two = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
-                                   in bindOrM one two
-            | n == length l = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
-            | otherwise = let none = bindAndM (bindVar (Not e1 `And` Not e2)) (go es n)
-                              one = bindAndM (bindVar (e1 `Xor` e2)) (go es (n-1))
-                              two = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
-                           in liftM2 Or (liftM2 Or none one) two >>= bindVar
+            | n == 0            = none
+            | n == 1            = bindOrM none one
+            | n == length l - 1 = bindOrM one two
+            | n == length l     = two
+            | otherwise         = liftM2 Or (liftM2 Or none one) two >>= bindVar
+                where none = bindAndM (bindVar (Not e1 `And` Not e2)) (go es n)
+                      one = bindAndM (bindVar (e1 `Xor` e2)) (go es (n-1))
+                      two = bindAndM (bindVar (e1 `And` e2)) (go es (n-2))
 
-kFunEQ2 :: (Encode a, Ord a) => [Exp a] -> Int -> Exp a
-kFunEQ2 = go
-    where go :: (Encode a, Ord a) => [Exp a] -> Int -> Exp a
-          go [e1] 0 = Not e1
-          go [e1] 1 = e1
-        
-          go [e1, e2] 0 = Not e1 `And` Not e2
-          go [e1, e2] 1 = e1 `Xor` e2
-          go [e1, e2] 2 = e1 `And` e2
-
-          go l@(e1:e2:es) n 
-            | n == 0 = (Not e1 `And` Not e2) `And` (go es 0)
-            | n == 1 = let none = (Not e1 `And` Not e2) `And` (go es 1)
-                           one = (e1 `Xor` e2) `And` (go es 0)
-                        in none `Or` one
-            | n == length l - 1 = let one = (e1 `Xor` e2) `And` (go es (n-1))
-                                      two = (e1 `And` e2) `And` (go es (n-2))
-                                   in one `Or` two
-            | n == length l = (e1 `And` e2) `And` (go es (n-2))
-            | otherwise = let none = (Not e1 `And` Not e2) `And` (go es n)
-                              one = (e1 `Xor` e2) `And` (go es (n-1))
-                              two = (e1 `And` e2) `And` (go es (n-2))
-                           in none `Or` one `Or` two
-
--- Evaluates an expression in a 3-way logic.  If the expression contains an unresolved variable (not in the map), the result is Nothing. 
-eval :: (Ord a) => Exp a -> Map (Exp a) Bool -> Maybe Bool
+eval :: (Ord a) => Exp a -> Map (Exp a) Bool -> Bool
 eval e m = go e
-    where go v@(Var _) = Map.lookup v m
-          go (Not e) = not <$> go e
-          go (And l r) = case (go l, go r) of
-                            (Just False, _) -> Just False
-                            (_, Just False) -> Just False
-                            (l', r') -> liftM2 (&&) l' r'
-          go (Or l r) = case (go l, go r) of
-                            (Just True, _) -> Just True
-                            (_, Just True) -> Just True
-                            (l', r') -> liftM2 (||) l' r'
-          go (Xor l r) = liftM2 (/=) (go l) (go r)
-          go (Imp l r) = go (Not l `Or` r)
-          go (Equiv l r) = go ((l `Imp` r) `And` (r `Imp` l))
+    where go v@(Var _) = case Map.lookup v m of
+                             Just b -> b
+                             Nothing -> error "Could not find value"
+          go (Not e) = not (go e)
+          go (And l r) = go l && go r
+          go (Or l r) = go l || go r
+          go (Xor l r) = go l /= go r
+          go (Imp l r) = not (go l) || go r
+          go (Equiv l r) = go l == go r
 
 -- Resolves all auxiliary variables
-evalT :: forall a. (Encode a, Ord a) => TExp a -> Map (Exp a) Bool -> Exp a
-evalT te varToVal = finalE
+evalT :: forall a. (Encode a, Ord a) => TExp a -> Map (Exp a) Bool -> Bool
+evalT te varToVal = eval e varAndAuxToVal
     where (e, TseytinState es _) = runState te (TseytinState Map.empty (rank (Proxy :: Proxy a) + 1))
           auxToDef = sortBy (\l r -> (encode . fst $ l) `compare` (encode . fst $ r)) [(x, e') | p@(Var x, e') <- fmap swap . Map.assocs $ es ]
-          (es', s') = runState (mapM f auxToDef) varToVal
-          finalE = foldl1 And (e : [ exp | (Just exp) <- es'])
-     
-          resolveValue :: Exp a -> Bool
-          resolveValue = undefined
-
-          f :: (a, Exp a) -> State (Map (Exp a) Bool) (Maybe (Exp a))
-          f (x, e') = state (\s -> case eval e' s of
-                                       Just False -> (Nothing, Map.insert (Var x) False s)
-                                       _ -> (Just $ Var x `Imp` e', s)
-                                       )
+          varAndAuxToVal = foldl' (\m (v, e') -> Map.insert (Var v) (eval e' m) m) varToVal auxToDef
  
 xs = [ Var (VarX PlanetX i) | i <- [1..18]]
 
