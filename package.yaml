@@ -50,3 +50,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - planet-x
+    - tasty
+    - tasty-hunit 

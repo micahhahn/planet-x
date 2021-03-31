@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cf2b76996e88fa56ef3583560238eec86775a79bab6f51d529211e2c07471f29
+-- hash: 1dd3621a651c6ec10a3877c63cf8265f6cdf41a9f30473f1ff2794a48dd25ef5
 
 name:           planet-x
 version:        0.1.0.0
@@ -75,4 +75,6 @@ test-suite planet-x-test
     , monad-loops
     , mtl
     , planet-x
+    , tasty
+    , tasty-hunit
   default-language: Haskell2010
