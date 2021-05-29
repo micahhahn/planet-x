@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1dd3621a651c6ec10a3877c63cf8265f6cdf41a9f30473f1ff2794a48dd25ef5
+-- hash: 8b567f762ed06e1b361f41973d34634b569c08706c5b20e83ea1fe34d0dde940
 
 name:           planet-x
 version:        0.1.0.0
@@ -32,6 +32,7 @@ library
       Lib
       Logic
       PlanetX
+      Rules
   other-modules:
       Paths_planet_x
   hs-source-dirs:
@@ -42,6 +43,7 @@ library
     , mios
     , monad-loops
     , mtl
+    , vector
   default-language: Haskell2010
 
 executable planet-x-exe
@@ -58,6 +60,7 @@ executable planet-x-exe
     , monad-loops
     , mtl
     , planet-x
+    , vector
   default-language: Haskell2010
 
 test-suite planet-x-test
@@ -77,4 +80,5 @@ test-suite planet-x-test
     , planet-x
     , tasty
     , tasty-hunit
+    , vector
   default-language: Haskell2010
