@@ -60,8 +60,13 @@ instance Show Solution where
                         GasCloud -> 'G'
                         PlanetX -> 'X'
 
-solutions :: [Solution]
-solutions = filter validXLocations s'
+newtype PartialSolution = PartialSolution { unPartialSolution :: (Solution, Int) }
+
+instance Show PartialSolution where
+    show (PartialSolution (s, i)) = show s ++ "x" ++ show i
+
+partialSolutions :: [PartialSolution]
+solutions = filter validXLocations (\s -> PartialSolution (s, length . validXLocations $ s)) <$> s'
     where dwarfs = stitch DwarfPlanet chooseDwarfPlanets 
           astroids = stitch Astroid chooseAstroids
           comets = stitch Comet chooseComets
@@ -85,8 +90,7 @@ writeSolutions = do
     let x = intercalate "\n" $ fmap (intersperse '\t' . show) solutionsX
     writeFile "C:/Users/Micah/Desktop/solutions.txt" x
 
--- validXLocations :: [Object] -> Int
-validXLocations :: Solution -> Bool
-validXLocations (Solution os) = not (null valid)
+validXLocations :: Solution -> [Int]
+validXLocations (Solution os) = valid
     where zipped = zip5 (drop 16 . cycle $ os) (drop 17 . cycle $ os) os (drop 1 . cycle $ os) (drop 2 . cycle $ os)
-          valid = [ () | (l2, l1, c, r1, r2) <- zipped, c == EmptySpace && l1 /= DwarfPlanet && r1 /= DwarfPlanet && (l1 /= GasCloud || l2 == EmptySpace) && (r1 /= GasCloud || r2 == EmptySpace)]
+          valid = [ c | (l2, l1, c, r1, r2) <- zipped, c == EmptySpace && l1 /= DwarfPlanet && r1 /= DwarfPlanet && (l1 /= GasCloud || l2 == EmptySpace) && (r1 /= GasCloud || r2 == EmptySpace)]

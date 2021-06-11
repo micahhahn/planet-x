@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 8b567f762ed06e1b361f41973d34634b569c08706c5b20e83ea1fe34d0dde940
+-- hash: b3b5c42102dc3f3e9428edaf7c38353762a8df0eb33c222624703d2e8bd48f66
 
 name:           planet-x
 version:        0.1.0.0
@@ -29,9 +29,11 @@ library
   exposed-modules:
       Encode
       Exp
+      Gen
       Lib
       Logic
       PlanetX
+      Query
       Rules
   other-modules:
       Paths_planet_x

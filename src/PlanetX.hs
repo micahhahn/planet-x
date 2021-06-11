@@ -145,9 +145,6 @@ survey o (l, r) = kEQ sectors
                     _ -> Var . VarX o <$> sectors'
           sectors' = takeUntil (== r) $ (\i -> (l + i - 1) `mod` sectorCount + 1) <$> [0..]
 
-s = sorted (Var . VarX Astroid <$> sectors')
-    where sectors' = takeUntil (== 3) $ (\i -> (17 + i - 1) `mod` sectorCount + 1) <$> [0..]
-
 next :: Int -> Int
 next i = i `mod` sectorCount + 1
 
