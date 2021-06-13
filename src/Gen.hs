@@ -2,7 +2,9 @@
 
 module Gen (
     solutions,
-    Solution(..)
+    Solution(..),
+    partialSolutions,
+    PartialSolution(..)
 ) where 
 
 import PlanetX
@@ -66,7 +68,7 @@ instance Show PartialSolution where
     show (PartialSolution (s, i)) = show s ++ "x" ++ show i
 
 partialSolutions :: [PartialSolution]
-solutions = filter validXLocations (\s -> PartialSolution (s, length . validXLocations $ s)) <$> s'
+partialSolutions = filter (\(PartialSolution (_, r)) -> r > 0) . fmap (\s -> PartialSolution (s, validXLocations s)) $ s'
     where dwarfs = stitch DwarfPlanet chooseDwarfPlanets 
           astroids = stitch Astroid chooseAstroids
           comets = stitch Comet chooseComets
@@ -75,8 +77,8 @@ solutions = filter validXLocations (\s -> PartialSolution (s, length . validXLoc
           indexSolutions = fmap emptys . concatMap gasClouds . concatMap comets . concatMap astroids . dwarfs $ ([], [1..18])
           s' = Solution . fmap snd . sortBy (\i1 i2 -> compare (fst i1) (fst i2)) <$> indexSolutions
 
-solutionsX :: [Solution]
-solutionsX = Solution . fmap snd . sortBy (\i1 i2 -> compare (fst i1) (fst i2)) <$> indexSolutions
+solutions :: [Solution]
+solutions = Solution . fmap snd . sortBy (\i1 i2 -> compare (fst i1) (fst i2)) <$> indexSolutions
     where dwarfs = stitch DwarfPlanet chooseDwarfPlanets 
           astroids = stitch Astroid chooseAstroids
           comets = stitch Comet chooseComets
@@ -87,10 +89,10 @@ solutionsX = Solution . fmap snd . sortBy (\i1 i2 -> compare (fst i1) (fst i2)) 
 
 writeSolutions :: IO ()
 writeSolutions = do
-    let x = intercalate "\n" $ fmap (intersperse '\t' . show) solutionsX
+    let x = intercalate "\n" $ fmap (intersperse '\t' . show) solutions
     writeFile "C:/Users/Micah/Desktop/solutions.txt" x
 
-validXLocations :: Solution -> [Int]
-validXLocations (Solution os) = valid
+validXLocations :: Solution -> Int
+validXLocations (Solution os) = length valid
     where zipped = zip5 (drop 16 . cycle $ os) (drop 17 . cycle $ os) os (drop 1 . cycle $ os) (drop 2 . cycle $ os)
-          valid = [ c | (l2, l1, c, r1, r2) <- zipped, c == EmptySpace && l1 /= DwarfPlanet && r1 /= DwarfPlanet && (l1 /= GasCloud || l2 == EmptySpace) && (r1 /= GasCloud || r2 == EmptySpace)]
+          valid = [ () | (l2, l1, c, r1, r2) <- zipped, c == EmptySpace && l1 /= DwarfPlanet && r1 /= DwarfPlanet && (l1 /= GasCloud || l2 == EmptySpace) && (r1 /= GasCloud || r2 == EmptySpace)]
