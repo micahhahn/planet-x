@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b3b5c42102dc3f3e9428edaf7c38353762a8df0eb33c222624703d2e8bd48f66
+-- hash: 9dd15f9510430d299ebc9921c70e9b0e744804e323debdb2d0d99d75f58574e8
 
 name:           planet-x
 version:        0.1.0.0
@@ -35,6 +35,7 @@ library
       PlanetX
       Query
       Rules
+      Solution
   other-modules:
       Paths_planet_x
   hs-source-dirs:
